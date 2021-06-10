@@ -1,0 +1,278 @@
+#Calculates shortwave radiative forcing based on soot-induced albedo decrease
+
+library(raster)
+
+setwd("/path to S2_Albedo_Updt outputs")
+
+observation_vars <- read.table("/radiation observations.csv", header = T, sep = ",", dec = ".")
+
+
+files <- list.files(getwd(), pattern = "blue_sky_albedo_snow_.*.tif$")
+
+s2_albedo_stack <- stack(files) #Uncomment this if you would like to bias-correct the albedos
+#In our study we subtracted 0.03240389 to bias-correct our albedos estimates, but this value 
+#should be changed to reflect your domain.
+
+#The loop below will loop through all your images
+
+for (i in 1:24) {
+  
+  s2_albedo_stack[[i]][s2_albedo_stack[[i]] > 1] <- NA
+  s2_albedo_stack[[i]][s2_albedo_stack[[i]] < 0] <- NA
+  
+  
+  #Parameters
+  
+  J <- as.numeric(substr(observation_vars$julian_day[i],5,7))
+  Ta <- observation_vars$Ta_meas[i]
+  RH <- observation_vars$RH_meas[i]
+  T0 <- 273.15 #K
+  Rv <- 461 #J.K^-1.kg^-1
+  e0 <- 0.6113 #kPa
+  Kt <- c(1,1,1,1,1,1,1,1,1,0.75,0.75,1,0.75,1,1,1,1,1,1,1,1,1,1,1)
+  SM <- -105 #deg
+  
+  
+  srtm <- raster("/path to SRTM elevation in UTM.tif")
+  srtm_geog <- raster("/path to SRTM in geographic coordinates.tif")
+  
+  plot(srtm)
+  
+  lat <- srtm_geog
+  long <- srtm_geog
+  xy <- coordinates(srtm_geog)
+  lat[] <- xy[,2]
+  long[] <- xy[,1]
+  
+  lat <- mean(as.vector(lat))
+  long <- mean(as.vector(long))
+  alt <- mean(as.vector(srtm), na.rm = T)
+  
+  
+  #Hour angle
+  
+  t = ((2*pi*J)/366) + 4.8718
+  
+  E =  (5.0323 -430.847*cos(t) +12.5024*cos(2*t) +18.25*cos(3*t) -100.976*sin(t)
+        +595.275*sin(2*t) +3.6858*sin(3*t) -12.47*sin(4*t))/60
+  
+  #Solar noon and solar time
+  
+  SN = 12 - (E/60) - ((SM - long)/15)
+  
+  LST = 13 #local standard time
+  
+  #Hour angle
+  
+  h = (LST-SN)*(pi/12)
+  
+  
+  s <- terrain(srtm, opt = "slope", unit = "radians")
+  
+  plot(s)
+  
+  gamma <- terrain(srtm, opt = "aspect", unit = "radians")
+  
+  gamma <- gamma - pi
+  
+  plot(gamma)
+  
+  
+  delta = (0.409*sin(((2*pi/365)*J) - 1.39))
+  
+  #Correction for slope and aspect
+  
+  
+  cos_Z_slope = ((sin(delta)*sin(lat*(pi/180))*cos(s))
+                 -(sin(delta)*cos(lat*(pi/180))*sin(s)*cos(gamma))
+                 +(cos(delta)*cos(lat*(pi/180))*cos(s)*cos(h))
+                 +(cos(delta)*sin(lat*(pi/180))*sin(s)*cos(gamma)*cos(h))
+                 +(cos(delta)*sin(gamma)*sin(s)*sin(h)))
+  
+  
+  plot(cos_Z_slope)
+  
+  
+  #Calculates radiative forcing
+  
+  E_in_meas <- observation_vars$E_in_meas[i] #incoming shortwave radiation from station (image, reference image)
+  
+  alb_dif <- s2_albedo_stack[[i]] #images used to calculate albedo difference
+  
+  
+  #SW_dif <- E_in_meas*(1 - alb_dif) #MJ/m2
+  
+  #plot(SW_dif)
+  
+  #SW_dif_res <- resample(SW_dif, cos_Z_slope)
+  
+  #SW_dif_slp <- SW_dif_res*(cos_Z_slope)
+  
+  #plot(SW_dif_slp) #Shortwave radiative forcing
+  
+  
+  #writeRaster(SW_dif_slp, filename = "C:/Users/alb818/Dropbox/PHD/ALBEDO/DOCs/Plots_Final_3/GIS/20170729_rad", format = "GTiff", overwrite = T)
+  
+  
+  #New implementation of Allen et al. 2006
+  
+  SolarIrradiance <- function(latitude, J) {
+    
+    #Input variables and parameters 
+    lat <- latitude*0.0174533 #rad 
+    long <- -115.1389 #deg
+    SM <- -105 #deg longitude for local time zone
+    Gsc <- 1367 #W.m^-2 Solar Constant
+    
+    
+    #Declination angle
+    
+    delta = (0.409*sin(((2*pi/365)*J) - 1.39))
+    
+    delta_deg = delta*57.2958
+    
+    #Equation of time
+    
+    t = ((2*pi*J)/366) + 4.8718
+    
+    E =  (5.0323 -430.847*cos(t) +12.5024*cos(2*t) +18.25*cos(3*t) -100.976*sin(t)
+          +595.275*sin(2*t) +3.6858*sin(3*t) -12.47*sin(4*t))/60
+    
+    #Solar noon and solar time
+    
+    SN = 12 - (E/60) - ((SM - long)/15)
+    
+    LST = 13 #local standard time
+    
+    #Hour angle
+    
+    h = (LST-SN)*(pi/12)
+    
+    #Zenith angle
+    
+    cos_Z = (sin(lat)*sin(delta)) + (cos(lat)*cos(delta)*cos(h))
+    
+    #Hourly extraterrestrial radiation
+    
+    dr = 1 + 0.033*cos(((2*pi)/365)*J)
+    
+    Ra_hor = Gsc*dr*cos_Z
+    
+    Ra_hor = ifelse(Ra_hor < 0, 0, Ra_hor)
+    
+    return(Ra_hor)
+    
+  }
+  
+  E_in <- SolarIrradiance(lat, J)
+  
+  
+  transm <- E_in_meas/E_in
+  
+  transm
+  
+  kb = 1.56*transm - 0.55
+  
+  kd = transm - kb
+  
+  
+  SolarIrrSlope <- function(latitude, J, cos_Z_slope) {
+    
+    #Input variables and parameters 
+    lat <- latitude*0.0174533 #rad 
+    long <- -115.1389 #deg
+    SM <- -105 #deg longitude for local time zone
+    Gsc <- 1367 #W.m^-2 Solar Constant
+    
+    
+    #Declination angle
+    
+    delta = (0.409*sin(((2*pi/365)*J) - 1.39))
+    
+    delta_deg = delta*57.2958
+    
+    #Equation of time
+    
+    t = ((2*pi*J)/366) + 4.8718
+    
+    E =  (5.0323 -430.847*cos(t) +12.5024*cos(2*t) +18.25*cos(3*t) -100.976*sin(t)
+          +595.275*sin(2*t) +3.6858*sin(3*t) -12.47*sin(4*t))/60
+    
+    #Solar noon and solar time
+    
+    SN = 12 - (E/60) - ((SM - long)/15)
+    
+    LST = 13 #local standard time
+    
+    #Hour angle
+    
+    h = (LST-SN)*(pi/12)
+    
+    #Hourly extraterrestrial radiation
+    
+    dr = 1 + 0.033*cos(((2*pi)/365)*J)
+    
+    Ra_hor = Gsc*dr*cos_Z_slope
+    
+    return(Ra_hor)
+    
+  }
+  
+  E_in_slope <- SolarIrrSlope(lat, J, cos_Z_slope)
+  
+  E_in_slope[E_in_slope < 0] <- 0
+  
+  L <- ifelse(Ta < 0, 2.83e+6, 2.5e+6)
+  
+  partvap <- function(e0, L, Rv, T0, Ta){
+    es <- e0*exp((L/Rv)*((1/T0)-(1/(Ta))))
+    es
+  }
+  
+  es <- partvap(e0, L, Rv, T0, Ta+273.15)
+  
+  ea = (RH/100)*es
+  
+  P_alt = 101.3*exp(-alt/8200)
+  
+  W = 0.14*ea*P_alt + 2.1
+  
+  #Clearness index
+  
+  elev_ang =  ((sin(lat*(pi/180)))*(sin(delta))) + ((cos(lat*(pi/180)))*(cos(delta))*(cos(h)))
+  
+  kbo = 0.98*exp(((-0.00146*P_alt)/(Kt[i]*sin(elev_ang)))-(0.075*((W/sin(elev_ang))^0.4)))
+  
+  fb = (kbo/kb)*(E_in_slope/E_in_meas)
+  
+  fi = 0.75 + (0.25*(cos(s))) - ((0.5*s)/pi)
+  
+  fia = (1 - kb)*((1+((kb/(kb+kd))^0.5)*(sin(s/2)^3))*fi) + fb*kb
+  
+  albedo_slope <- resample(alb_dif, cos_Z_slope)
+  
+  Rs = E_in_meas*((fb*(kb/transm)) + (fia*(kd/transm)) + (albedo_slope*(1 - fi))) #using measured SW radiation
+  
+  #Rs = E_in*((fb*(kb/transm)) + (fia*(kd/transm)) + (albedo_slope*(1 - fi))) #using modeled SW radiation
+  
+  plot(Rs)
+  
+  
+  Rs_hor = Rs/(cos(s))
+  
+  plot(Rs_hor)
+  
+  
+  SW_dif = Rs_hor*(1 - albedo_slope)
+  
+  rad_dev <- SW_dif 
+  
+  plot(rad_dev)
+  
+  writeRaster(rad_dev, 
+              filename = 
+                paste0("/path to SW_Forcing outputs/SW_Forcing_", i), 
+              format = "GTiff", overwrite = T)
+  
+}
+
