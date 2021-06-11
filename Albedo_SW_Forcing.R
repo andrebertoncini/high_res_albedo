@@ -16,11 +16,11 @@ observation_vars <- read.table("/radiation observations.csv", header = T, sep = 
 
 files <- list.files(getwd(), pattern = "blue_sky_albedo_snow_.*.tif$")
 
-s2_albedo_stack <- stack(files) #Uncomment this if you would like to bias-correct the albedos
+s2_albedo_stack <- stack(files) #Uncomment this if you would like to bias-correct the albedos.
 #In our study we subtracted 0.03240389 to bias-correct our albedos estimates, but this value 
 #should be changed to reflect your domain.
 
-#The loop below will loop through all your images
+#The code below will loop through all your albedo images
 
 for (i in 1:24) {
   
@@ -234,6 +234,7 @@ for (i in 1:24) {
   
   W = 0.14*ea*P_alt + 2.1
   
+  
   #Clearness index
   
   elev_ang =  ((sin(lat*(pi/180)))*(sin(delta))) + ((cos(lat*(pi/180)))*(cos(delta))*(cos(h)))
@@ -262,9 +263,7 @@ for (i in 1:24) {
   
   plot(SW_forcing)
   
-  writeRaster(SW_forcing, 
-              filename = 
-                paste0("/path to SW_Forcing outputs/SW_Forcing_", i), 
+  writeRaster(SW_forcing, filename = paste0("/path to SW_Forcing outputs/SW_Forcing_", i), 
               format = "GTiff", overwrite = T)
   
 }
