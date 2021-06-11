@@ -1,4 +1,11 @@
-#Calculates shortwave radiative forcing based on soot-induced albedo decrease
+#Calculates shortwave radiative forcing using the remote sensing albedo retrievals from 
+#S2_Albedo_Updt script. This code is based on Allen et al. (2006) "Analytical integrated 
+#functions for daily solar radiation on slopes" - Agricultural and Forestry Meteorology
+
+#Author: Andre Bertoncini
+
+#Institution: Centre for Hydrology - University of Saskatchewan
+
 
 library(raster)
 
@@ -49,6 +56,8 @@ for (i in 1:24) {
   alt <- mean(as.vector(srtm), na.rm = T)
   
   
+  #Calculates spatially-distributed Cos Z based on SRTM elevation
+  
   #Hour angle
   
   t = ((2*pi*J)/366) + 4.8718
@@ -97,24 +106,10 @@ for (i in 1:24) {
   
   E_in_meas <- observation_vars$E_in_meas[i] #incoming shortwave radiation from station (image, reference image)
   
-  alb_dif <- s2_albedo_stack[[i]] #images used to calculate albedo difference
+  alb <- s2_albedo_stack[[i]] #albedo images
   
   
-  #SW_dif <- E_in_meas*(1 - alb_dif) #MJ/m2
-  
-  #plot(SW_dif)
-  
-  #SW_dif_res <- resample(SW_dif, cos_Z_slope)
-  
-  #SW_dif_slp <- SW_dif_res*(cos_Z_slope)
-  
-  #plot(SW_dif_slp) #Shortwave radiative forcing
-  
-  
-  #writeRaster(SW_dif_slp, filename = "C:/Users/alb818/Dropbox/PHD/ALBEDO/DOCs/Plots_Final_3/GIS/20170729_rad", format = "GTiff", overwrite = T)
-  
-  
-  #New implementation of Allen et al. 2006
+  #Calculates point solar irradiance with the purpose of calculating station transmissivity
   
   SolarIrradiance <- function(latitude, J) {
     
@@ -175,6 +170,8 @@ for (i in 1:24) {
   
   kd = transm - kb
   
+  
+  #Calculates spatially-distributed shortwave radiative forcing corrected for slope and aspect
   
   SolarIrrSlope <- function(latitude, J, cos_Z_slope) {
     
@@ -249,11 +246,9 @@ for (i in 1:24) {
   
   fia = (1 - kb)*((1+((kb/(kb+kd))^0.5)*(sin(s/2)^3))*fi) + fb*kb
   
-  albedo_slope <- resample(alb_dif, cos_Z_slope)
+  albedo_slope <- resample(alb, cos_Z_slope)
   
-  Rs = E_in_meas*((fb*(kb/transm)) + (fia*(kd/transm)) + (albedo_slope*(1 - fi))) #using measured SW radiation
-  
-  #Rs = E_in*((fb*(kb/transm)) + (fia*(kd/transm)) + (albedo_slope*(1 - fi))) #using modeled SW radiation
+  Rs = E_in_meas*((fb*(kb/transm)) + (fia*(kd/transm)) + (albedo_slope*(1 - fi)))
   
   plot(Rs)
   
@@ -263,13 +258,11 @@ for (i in 1:24) {
   plot(Rs_hor)
   
   
-  SW_dif = Rs_hor*(1 - albedo_slope)
+  SW_forcing = Rs_hor*(1 - albedo_slope)
   
-  rad_dev <- SW_dif 
+  plot(SW_forcing)
   
-  plot(rad_dev)
-  
-  writeRaster(rad_dev, 
+  writeRaster(SW_forcing, 
               filename = 
                 paste0("/path to SW_Forcing outputs/SW_Forcing_", i), 
               format = "GTiff", overwrite = T)
