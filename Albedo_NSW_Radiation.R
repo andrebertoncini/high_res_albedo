@@ -111,7 +111,7 @@ for (i in 1:24) {
   alb <- s2_albedo_stack[[i]] #albedo images
   
   
-  #Calculates point-based theoretical solar irradiance with the purpose of calculating station transmissivity
+  #Function to calculate point-based theoretical solar irradiance with the purpose of calculating station transmissivity
   
   SolarIrradiance <- function(latitude, J) {
     
@@ -173,7 +173,7 @@ for (i in 1:24) {
   kd = transm - kb
   
   
-  #Calculates spatially-distributed net shortwave radiation corrected for slope and aspect
+  #Function to calculate spatially-distributed net shortwave radiation corrected for slope and aspect
   
   SolarIrrSlope <- function(latitude, J, cos_Z_slope) {
     
