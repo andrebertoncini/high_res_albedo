@@ -1,6 +1,6 @@
-#Calculates shortwave radiative forcing using the remote sensing albedo retrievals from 
-#S2_Albedo_Updt script. This code is based on Allen et al. (2006) "Analytical integrated 
-#functions for daily solar radiation on slopes" - Agricultural and Forest Meteorology
+#Calculates net shortwave radiation corrected for slope and aspect using the remote sensing
+#albedo retrievals from the S2_Albedo_Updt script. This code is based on Allen et al. (2006) 
+#"Analytical integrated functions for daily solar radiation on slopes" - Agricultural and Forest Meteorology
 
 #Author: Andre Bertoncini
 
@@ -31,13 +31,13 @@ for (i in 1:24) {
   #Parameters
   
   J <- as.numeric(substr(observation_vars$julian_day[i],5,7))
-  Ta <- observation_vars$Ta_meas[i]
-  RH <- observation_vars$RH_meas[i]
+  Ta <- observation_vars$Ta_meas[i] #observed air temperature in deg. C
+  RH <- observation_vars$RH_meas[i] #observed relative humidity in %
   T0 <- 273.15 #K
   Rv <- 461 #J.K^-1.kg^-1
   e0 <- 0.6113 #kPa
-  Kt <- c(1,1,1,1,1,1,1,1,1,0.75,0.75,1,0.75,1,1,1,1,1,1,1,1,1,1,1)
-  SM <- -105 #deg
+  Kt <- c(1,1,1,1,1,1,1,1,1,0.75,0.75,1,0.75,1,1,1,1,1,1,1,1,1,1,1) #empirical turbidity coefficient from Allen et al. (2006)
+  SM <- -105 #deg longitude for local time zone
   
   
   srtm <- raster("/path to SRTM elevation in UTM.tif")
@@ -75,10 +75,13 @@ for (i in 1:24) {
   
   h = (LST-SN)*(pi/12)
   
+  #Calculate slope
   
   s <- terrain(srtm, opt = "slope", unit = "radians")
   
   plot(s)
+  
+  #Calculate aspect
   
   gamma <- terrain(srtm, opt = "aspect", unit = "radians")
   
@@ -87,10 +90,9 @@ for (i in 1:24) {
   plot(gamma)
   
   
-  delta = (0.409*sin(((2*pi/365)*J) - 1.39))
-  
   #Correction for slope and aspect
   
+  delta = (0.409*sin(((2*pi/365)*J) - 1.39))
   
   cos_Z_slope = ((sin(delta)*sin(lat*(pi/180))*cos(s))
                  -(sin(delta)*cos(lat*(pi/180))*sin(s)*cos(gamma))
@@ -102,14 +104,14 @@ for (i in 1:24) {
   plot(cos_Z_slope)
   
   
-  #Calculates radiative forcing
+  #Calculates net shortwave radiation
   
   E_in_meas <- observation_vars$E_in_meas[i] #incoming shortwave radiation from station (image, reference image)
   
   alb <- s2_albedo_stack[[i]] #albedo images
   
   
-  #Calculates point solar irradiance with the purpose of calculating station transmissivity
+  #Calculates point-based theoretical solar irradiance with the purpose of calculating station transmissivity
   
   SolarIrradiance <- function(latitude, J) {
     
@@ -171,7 +173,7 @@ for (i in 1:24) {
   kd = transm - kb
   
   
-  #Calculates spatially-distributed shortwave radiative forcing corrected for slope and aspect
+  #Calculates spatially-distributed net shortwave radiation corrected for slope and aspect
   
   SolarIrrSlope <- function(latitude, J, cos_Z_slope) {
     
@@ -235,7 +237,7 @@ for (i in 1:24) {
   W = 0.14*ea*P_alt + 2.1
   
   
-  #Clearness index
+  #Calculates clearness index
   
   elev_ang =  ((sin(lat*(pi/180)))*(sin(delta))) + ((cos(lat*(pi/180)))*(cos(delta))*(cos(h)))
   
@@ -259,11 +261,11 @@ for (i in 1:24) {
   plot(Rs_hor)
   
   
-  SW_forcing = Rs_hor*(1 - albedo_slope)
+  NSW_radiation = Rs_hor*(1 - albedo_slope)
   
-  plot(SW_forcing)
+  plot(NSW_radiation)
   
-  writeRaster(SW_forcing, filename = paste0("/path to SW_Forcing outputs/SW_Forcing_", i), 
+  writeRaster(NSW_radiation, filename = paste0("/path to SW_Forcing outputs/SW_Forcing_", i), 
               format = "GTiff", overwrite = T)
   
 }
