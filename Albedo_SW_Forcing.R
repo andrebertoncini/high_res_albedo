@@ -1,6 +1,6 @@
 #Calculates shortwave radiative forcing using the remote sensing albedo retrievals from 
 #S2_Albedo_Updt script. This code is based on Allen et al. (2006) "Analytical integrated 
-#functions for daily solar radiation on slopes" - Agricultural and Forestry Meteorology
+#functions for daily solar radiation on slopes" - Agricultural and Forest Meteorology
 
 #Author: Andre Bertoncini
 
