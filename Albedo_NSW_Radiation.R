@@ -16,9 +16,11 @@ observation_vars <- read.table("/radiation observations.csv", header = T, sep = 
 
 files <- list.files(getwd(), pattern = "blue_sky_albedo_snow_.*.tif$")
 
-s2_albedo_stack <- stack(files) #Uncomment this if you would like to bias-correct the albedos.
-#In our study we subtracted 0.03240389 to bias-correct our albedos estimates, but this value 
-#should be changed to reflect your domain.
+bias <- 0.03240389 #Our study bias corrected the albedo before calculating the net shortwave radiation.
+#You can change this to 0, if you do not wish to bias correct the albedo. Or, you can use a bias value
+#that reflects your domain.
+
+s2_albedo_stack <- stack(files) - bias
 
 #The code below will loop through all your albedo images
 
@@ -75,13 +77,13 @@ for (i in 1:24) {
   
   h = (LST-SN)*(pi/12)
   
-  #Calculate slope
+  #Calculates slope
   
   s <- terrain(srtm, opt = "slope", unit = "radians")
   
   plot(s)
   
-  #Calculate aspect
+  #Calculates aspect
   
   gamma <- terrain(srtm, opt = "aspect", unit = "radians")
   
@@ -90,7 +92,7 @@ for (i in 1:24) {
   plot(gamma)
   
   
-  #Correction for slope and aspect
+  #Calculates Cos Z corrected for slope and aspect
   
   delta = (0.409*sin(((2*pi/365)*J) - 1.39))
   
