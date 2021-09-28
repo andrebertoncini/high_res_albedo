@@ -7,16 +7,16 @@
 
 #Institution: Centre for Hydrology - University of Saskatchewan
 
-
 library(XML)
 library(pracma)
 library(raster)
 
-#Set target date
 
-Dm <- "28"
+#Set target date (same as Sentinel-2 image)
+
+Dm <- "08"
 M <- "08"
-Y <- "2019"
+Y <- "2018"
 
 img_date <- paste0(Y, M, Dm)
 modis_date <- paste0(Y, ".", M, ".", Dm)
@@ -24,58 +24,58 @@ Dm_j <- (as.numeric(Dm) - 32) + (floor(275*(as.numeric(M)/9))) + (2*floor(3/(as.
 Dm_j <- ifelse(Y == "2016" | Y == "2020", Dm_j + 1, Dm_j) #for leap years: 2016 and 2020 
 date_j <- paste0(Y, Dm_j)
 
+
+#Set folders for Sentinel-2 metadata
+
 list_folders <- list.dirs("/path to Sentinel-2 folder")
 
 folder <- grep(pattern = paste0(img_date), list_folders)
 
-#Set parameters
-#Red dots are lines that need to be changed
+
+#Generate 16-day MODIS surface reflectance timeseries
+
+setwd("/path to MODIS images")
+
+AOI_sent <- extent(399960, 509760, 5690220, 5800020)
+
+modis_list <- list()
+
+for (i in 0:15) {
+  
+  date_list <- as.character((as.numeric(date_j) - 8) + i)  
+  
+  modis_list <- append(modis_list, list.files(getwd(), pattern = paste0("MOD09GA.*.", date_list, ".*.tif$"), recursive = T))
+  
+}
+
+modis_list <- unlist(modis_list)
 
 
-  #Generate 16-day MODIS surface reflectance timeseries
+for (w in c(1,2,3,4,6,7)) {
   
-  setwd("/path to MODIS images")
+  band <- w
   
-  AOI_sent <- extent(399960, 509760, 5690220, 5800020)
   
-  modis_list <- list()
+  setwd("/path to MODIS images")  
+  
+  ref_i <- stack()
   
   for (i in 0:15) {
     
-    date_list <- as.character((as.numeric(date_j) - 8) + i)  
+    modis_ref <- raster(modis_list[i*12 + (band + 5)])
     
-    modis_list <- append(modis_list, list.files(getwd(), pattern = paste0("MOD09GA.*.", date_list, ".*.tif$"), recursive = T))
+    modis_ref <- crop(modis_ref, AOI_sent)
     
-  }
-  
-  modis_list <- unlist(modis_list)
-  
-
-  for (w in c(1,2,3,4,6,7)) {
+    modis_ref[modis_ref == -28672] <- NA
+    modis_ref[modis_ref > 16000] <- NA
+    modis_ref[modis_ref < -100] <- NA
+    modis_ref <- modis_ref*0.0001
     
-    band <- w
+    plot(modis_ref)
     
-    
-    setwd("/path to MODIS images")  
-    
-    ref_i <- stack()
-    
-    for (i in 0:15) {
-      
-      modis_ref <- raster(modis_list[i*12 + (band + 5)])
-      
-      modis_ref <- crop(modis_ref, AOI_sent)
-      
-      modis_ref[modis_ref == -28672] <- NA
-      modis_ref[modis_ref > 16000] <- NA
-      modis_ref[modis_ref < -100] <- NA
-      modis_ref <- modis_ref*0.0001
-      
-      plot(modis_ref)
-      
-      ref_i <- stack(ref_i, modis_ref)
-    }  
-  }
+    ref_i <- stack(ref_i, modis_ref)
+  }  
+}
 
 
 
@@ -202,11 +202,41 @@ for (w in c(1,2,3,4,6,7)) {
   plot(phi)
   
   
-  #Import f_iso and f_snow parameters
+  #Import f_iso, f_vol, f_geo, and f_snow parameters and evaluation metrics
   
-  f_iso <- raster(paste0("/path to outputs from the SnowKernel script/f_iso_", img_date, "_B", band, ".tif"))
+  f_iso <- raster(paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/f_iso_", img_date, "_B", band, ".tif"))
   
-  f_snow <- raster(paste0("/path to outputs from the SnowKernel script/f_snow_", img_date, "_B", band, ".tif"))
+  f_vol <- raster(paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/f_vol_", img_date, "_B", band, ".tif"))
+  
+  f_geo <- raster(paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/f_geo_", img_date, "_B", band, ".tif"))
+  
+  f_snow <- raster(paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/f_snow_", img_date, "_B", band, ".tif"))
+  
+  rmse <- raster(paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/rmse_", img_date, "_B", band, ".tif"))
+  
+  wod_wdr <- raster(paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/wod_wdr_", img_date, "_B", band, ".tif"))
+  
+  wod_wsa <- raster(paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/wod_wsa_", img_date, "_B", band, ".tif"))
+  
+  
+  #Remove pixels that do not meet MODIS thresholds following Shuai et al. (2008) "Quality assessment of BRDF/albedo 
+  #retrievals in MODIS operational system" - Geophysical Research Letters
+  
+  f_iso[rmse > 0.08] <- NA
+  f_iso[wod_wdr > 1.65] <- NA
+  f_iso[wod_wsa > 2.5] <- NA
+  
+  f_vol[rmse > 0.08] <- NA
+  f_vol[wod_wdr > 1.65] <- NA
+  f_vol[wod_wsa > 2.5] <- NA
+  
+  f_geo[rmse > 0.08] <- NA
+  f_geo[wod_wdr > 1.65] <- NA
+  f_geo[wod_wsa > 2.5] <- NA
+  
+  f_snow[rmse > 0.08] <- NA
+  f_snow[wod_wdr > 1.65] <- NA
+  f_snow[wod_wsa > 2.5] <- NA
   
   
   #Calculation of BRDF reflectance (R_omega) at Sentinel-2 observation and illumination geometry
@@ -223,11 +253,34 @@ for (w in c(1,2,3,4,6,7)) {
   
   R_0 = (k1 + (k2*(cos(theta_s) + cos(theta_v))) + (k3*(cos(theta_s)*cos(theta_v))) + P_E)/(4*(cos(theta_s) + cos(theta_v)))
   
+  theta_st = atan(tan(theta_s))
+  
+  theta_vt = atan(tan(theta_v))
+  
+  efe = sqrt(((tan(theta_st))^2) + ((tan(theta_vt))^2) - (2*(tan(theta_st)*tan(theta_vt)*cos(phi))))
+  
+  cos_k = 2*((sqrt((efe^2) + ((tan(theta_st)*tan(theta_vt)*sin(phi))^2)))/((1/cos(theta_st))+(1/cos(theta_vt))))
+  
+  cos_k[cos_k < -1] <- -1
+  cos_k[cos_k > 1] <- 1
+  
+  k = (acos(cos_k))
+  
+  over = (1/pi)*(k - (sin(k)*cos_k))*((1/cos(theta_st)) + (1/cos(theta_vt)))
+  
+  cos_Et = (sin(theta_st)*sin(theta_vt)*cos(phi)) + (cos(theta_st)*cos(theta_vt))
+  
   
   k_snow_omega = (R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + (0.4076*alpha) - 1.1081
   
+  k_vol_omega = (((((pi/2) - (E*(pi/180)))*cos_E) + sin(E))/(cos(theta_s) + cos(theta_v))) - (pi/4)
   
-  R_omega = f_iso + f_snow*k_snow_omega
+  k_geo_omega = over - ((1/cos(theta_st)) + (1/cos(theta_vt)) - ((1/2)*(1 + cos_Et)*((1/cos(theta_vt))*(1/cos(theta_st)))))
+  
+  
+  R_omega = f_iso + f_vol*k_vol_omega + f_geo*k_geo_omega + f_snow*k_snow_omega
+  
+  R_omega[R_omega < 0] <- NA
   
   plot(R_omega)
   
@@ -236,6 +289,46 @@ for (w in c(1,2,3,4,6,7)) {
   
   rm(theta_v)
   rm(phi)
+  
+  
+  k_vol_theta_s <- function(theta_v, phi) {
+    
+    cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
+    
+    E = (acos(cos_E))*(180/pi)
+    
+    
+    k_vol_omega = ((((((pi/2) - (E*(pi/180)))*cos_E) + sin(E))/(cos(theta_s) + cos(theta_v))) - (pi/4))*(sin(theta_v))*(cos(theta_v))
+    
+  }
+  
+  
+  
+  k_geo_theta_s <- function(theta_v, phi) {
+    
+    theta_st = atan(tan(theta_s))
+    
+    theta_vt = atan(tan(theta_v))
+    
+    efe = sqrt(((tan(theta_st))^2) + ((tan(theta_vt))^2) - (2*(tan(theta_st)*tan(theta_vt)*cos(phi))))
+    
+    cos_k = 2*((sqrt((efe^2) + ((tan(theta_st)*tan(theta_vt)*sin(phi))^2)))/((1/cos(theta_st))+(1/cos(theta_vt))))
+    
+    cos_k[cos_k < -1] <- -1
+    cos_k[cos_k > 1] <- 1
+    
+    k = (acos(cos_k))
+    
+    over = (1/pi)*(k - (sin(k)*cos_k))*((1/cos(theta_st)) + (1/cos(theta_vt)))
+    
+    cos_Et = (sin(theta_st)*sin(theta_vt)*cos(phi)) + (cos(theta_st)*cos(theta_vt))
+    
+    
+    k_geo_omega = (over - ((1/cos(theta_st)) + (1/cos(theta_vt)) - ((1/2)*(1 + cos_Et)*((1/cos(theta_vt))*(1/cos(theta_st))))))*(sin(theta_v))*(cos(theta_v))
+    
+  }
+  
+  
   
   k_snow_theta_s <- function(theta_v, phi) {
     
@@ -255,6 +348,10 @@ for (w in c(1,2,3,4,6,7)) {
   
   theta_s_vec <- as.vector(theta_s_i)
   
+  k_vol_l_theta_s <- vector()
+  
+  k_geo_l_theta_s <- vector()
+  
   k_snow_l_theta_s <- vector()
   
   
@@ -262,16 +359,47 @@ for (w in c(1,2,3,4,6,7)) {
     
     theta_s <- theta_s_vec[i]
     
-    k_snow_l_theta_s[i] <- (integral2(k_snow_theta_s, 0, pi/2, 0, 2*pi, reltol = 1e-6)$Q)*(1/pi)
+    k_vol_l_theta_s[i] <- (integral2(k_vol_theta_s, 0, pi/2, 0, 2*pi, reltol = 1e-2)$Q)*(1/pi)
     
   }
-
+  
+  
+  for (i in 1:length(theta_s_vec)) {
+    
+    theta_s <- theta_s_vec[i]
+    
+    k_geo_l_theta_s[i] <- (integral2(k_geo_theta_s, 0, pi/2, 0, 2*pi, reltol = 1e-2)$Q)*(1/pi)
+    
+  }
+  
+  
+  for (i in 1:length(theta_s_vec)) {
+    
+    theta_s <- theta_s_vec[i]
+    
+    k_snow_l_theta_s[i] <- (integral2(k_snow_theta_s, 0, pi/2, 0, 2*pi, reltol = 1e-2)$Q)*(1/pi)
+    
+  }
+  
+  
+  k_vol_l_theta_raster <- raster(matrix(k_vol_l_theta_s, ncol = 237, nrow = 237))
+  
+  extent(k_vol_l_theta_raster) <- modis_ref
+  
+  
+  k_geo_l_theta_raster <- raster(matrix(k_geo_l_theta_s, ncol = 237, nrow = 237))
+  
+  extent(k_geo_l_theta_raster) <- modis_ref
+  
   
   k_snow_l_theta_raster <- raster(matrix(k_snow_l_theta_s, ncol = 237, nrow = 237))
   
   extent(k_snow_l_theta_raster) <- modis_ref
   
-  R_l_theta_s = f_iso + f_snow*k_snow_l_theta_s
+  
+  R_l_theta_s = f_iso + f_vol*k_vol_l_theta_s + f_geo*k_geo_l_theta_s + f_snow*k_snow_l_theta_s
+  
+  R_l_theta_s[R_l_theta_s < 0] <- NA
   
   plot(R_l_theta_s)
   
@@ -279,6 +407,45 @@ for (w in c(1,2,3,4,6,7)) {
   #Calculation of BRDF reflectance (R_l) integrated for both the illumination and observation hemispheres.
   
   rm(theta_s)
+  
+  
+  k_vol <- function(theta_s, theta_v, phi) {
+    
+    cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
+    
+    E = (acos(cos_E))*(180/pi)
+    
+    
+    k_vol_omega = (((((((pi/2) - (E*(pi/180)))*cos_E) + sin(E))/(cos(theta_s) + cos(theta_v))) - (pi/4))*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
+    
+  }
+  
+  
+  
+  k_geo <- function(theta_s, theta_v, phi) {
+    
+    theta_st = atan(tan(theta_s))
+    
+    theta_vt = atan(tan(theta_v))
+    
+    efe = sqrt(((tan(theta_st))^2) + ((tan(theta_vt))^2) - (2*(tan(theta_st)*tan(theta_vt)*cos(phi))))
+    
+    cos_k = 2*((sqrt((efe^2) + ((tan(theta_st)*tan(theta_vt)*sin(phi))^2)))/((1/cos(theta_st))+(1/cos(theta_vt))))
+    
+    cos_k[cos_k < -1] <- -1
+    cos_k[cos_k > 1] <- 1
+    
+    k = (acos(cos_k))
+    
+    over = (1/pi)*(k - (sin(k)*cos_k))*((1/cos(theta_st)) + (1/cos(theta_vt)))
+    
+    cos_Et = (sin(theta_st)*sin(theta_vt)*cos(phi)) + (cos(theta_st)*cos(theta_vt))
+    
+    
+    k_geo_omega = ((over - ((1/cos(theta_st)) + (1/cos(theta_vt)) - ((1/2)*(1 + cos_Et)*((1/cos(theta_vt))*(1/cos(theta_st))))))*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
+    
+  }
+  
   
   k_snow <- function(theta_s, theta_v, phi) {
     
@@ -296,9 +463,16 @@ for (w in c(1,2,3,4,6,7)) {
   }
   
   
-  k_snow_l <- (integral3(k_snow, 0, pi/2, 0, pi/2, 0, 2*pi, reltol = 1e-6))*(2/pi)
+  k_vol_l <- (integral3(k_vol, 0, pi/2, 0, pi/2, 0, 2*pi, reltol = 1e-2))*(2/pi)
   
-  R_l = f_iso + f_snow*k_snow_l
+  k_geo_l <- (integral3(k_geo, 0, pi/2, 0, pi/2, 0, 2*pi, reltol = 1e-2))*(2/pi)
+  
+  k_snow_l <- (integral3(k_snow, 0, pi/2, 0, pi/2, 0, 2*pi, reltol = 1e-2))*(2/pi)
+  
+  
+  R_l = f_iso + f_vol*k_vol_l + f_geo*k_geo_l + f_snow*k_snow_l
+  
+  R_l[R_l < 0] <- NA
   
   plot(R_l)
   

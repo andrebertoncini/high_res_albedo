@@ -11,20 +11,24 @@
 library(raster)
 library(rgdal)
 library(reshape2)
+library(ExtDist)
+library(pracma)
+library(MASS)
 #library(MODIS)
 
 
-#Set target date (same as the Sentinel-2 image) 
+#Set target date (same as Sentinel-2 image)
 
-Dm <- "22"
-M <- "07"
-Y <- "2019"
+Dm <- "08"
+M <- "08"
+Y <- "2018"
 
 img_date <- paste0(Y, M, Dm)
 modis_date <- paste0(Y, ".", M, ".", Dm)
 Dm_j <- (as.numeric(Dm) - 32) + (floor(275*(as.numeric(M)/9))) + (2*floor(3/(as.numeric(M)+1)))
 Dm_j <- ifelse(Y == "2016" | Y == "2020", Dm_j + 1, Dm_j) #for leap years: 2016 and 2020
 date_j <- paste0(Y, Dm_j)
+
 
 #Uncomment lines below to download MODIS data through the MODIS package.
 
@@ -34,9 +38,11 @@ date_j <- paste0(Y, Dm_j)
 
 #Retrieve MODIS data
 
-AOI_sent <- extent(399960, 509760, 5690220, 5800020) # Sentinel-2 extent in UTM
+AOI_sent <- extent(399960, 509760, 5690220, 5800020)
 
-modis_ext <- extent(-120, -113, 50, 53) # MODIS extent in Geographic coordinates
+AOI <- extent(421290, 496851.5, 5759734, 5800008.8)
+
+modis_ext <- extent(-120, -113, 50, 53)
 
 
 #modis_products <- getProduct()
@@ -74,9 +80,16 @@ for (i in 0:15) {
 modis_list <- unlist(modis_list)
 
 
+
 for (w in c(1,2,3,4,6,7)) {
   
   band <- w
+  
+  
+  setwd("/path to MODIS images")  
+  
+  
+  #Retrieve surface reflectance
   
   ref_i <- stack()
   
@@ -96,7 +109,8 @@ for (w in c(1,2,3,4,6,7)) {
     ref_i <- stack(ref_i, modis_ref)
     
   }
-
+  
+  
   #Generate cloud and smoke masks for MODIS
   
   modis_mask_i <- stack()
@@ -257,51 +271,130 @@ for (w in c(1,2,3,4,6,7)) {
   plot(modis_phi_i)
   
   
-  #Compute snow kernels
+  #Input percentage of pixel coverage
   
+  setwd("/path to files of percentage of MODIS pixel coverage")
+  
+  list_perc <- list.files(getwd())
+  
+  target_file <- which(list.files(getwd()) == paste0("MOD09GA_PercCov_", img_date, ".tif"))
+  
+  list_perc_sixteen <- list_perc[(target_file-8):(target_file+7)]
+  
+  
+  perc_stack <- stack()
+  
+  for (p in 1:16) {
+    
+    perc_cov <- raster(list_perc_sixteen[p])  
+    
+    perc_cov_proj <- projectRaster(perc_cov, modis_phi_i)
+    
+    perc_cov_crop <- resample(perc_cov_proj, modis_phi_i, method = "ngb")
+    
+    perc_stack <- stack(perc_stack, perc_cov_crop)
+    
+  }
+  
+  
+  #Compute isotropic, volumetric, geometric, and snow kernels
   
   theta_s_vec <- as.vector(modis_theta_s_i)
   theta_v_vec <- as.vector(modis_theta_v_i)
   phi_vec <- as.vector(modis_phi_i)
   ref_vec <- as.vector(modis_clear)
+  perc_vec <- as.vector(perc_stack)
   
-  input_data <- data.frame(theta_s_vec, theta_v_vec, phi_vec, ref_vec)
   
-  write.table(input_data, file = paste0("/path to output data/SnowKernel_Data_B", w, ".csv"), sep = ";", dec = ".")
+  #This part of the script solves a weighted constrained linear system to retrieve the BRDF parameters
+  #Note that 56169 is the number of MODIS pixels, so you will need to change this for your domain
   
-}
-
-
-#This part of the script perform the optimization to retrieve BRDF information
-#Note that 56169 is the number of MODIS pixels, so you will need to change this for your domain.
-
-setwd("/path of output data from previous step")
-
-for (i in c(1,2,3,4,6,7)) {
-
-band <- i
-
-input_data <- read.table(paste0("SnowKernel_Data_B", band, ".csv"), header = T, sep = ";", dec = ".")
-
-theta_s_vec <- input_data$theta_s_vec
-theta_v_vec <- input_data$theta_v_vec
-phi_vec <- input_data$phi_vec
-ref_vec <- input_data$ref_vec
-
-k1 <- 1.247
-k2 <- 1.186
-k3 <- 5.157
-alpha <- 0.3
-
-f_iso_final <- vector()
-f_snow_final <- vector()
-
-pb <- txtProgressBar(min = 1, max = length(theta_s_vec), style = 3)
-
-
-for (j in 1:length(theta_s_vec)) {
+  setwd("/path to ouput MODIS BRDF kernel parameters and evaluation")
   
-  tryCatch({
+  
+  k1 <- 1.247
+  k2 <- 1.186
+  k3 <- 5.157
+  alpha <- 0.3
+  
+  probs <- c(seq(0.5, 0.95, 0.05625), seq(0.90, 0.55, -0.05625))
+  temp_weights <- round(qLaplace(probs, 0.5, 0.219), 2)
+  
+  
+  k_vol <- function(theta_s, theta_v, phi) {
+    
+    cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
+    
+    E = (acos(cos_E))*(180/pi)
+    
+    
+    k_vol_omega = (((((((pi/2) - (E*(pi/180)))*cos_E) + sin(E))/(cos(theta_s) + cos(theta_v))) - (pi/4))*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
+    
+  }
+  
+  
+  k_geo <- function(theta_s, theta_v, phi) {
+    
+    theta_st = atan(tan(theta_s))
+    
+    theta_vt = atan(tan(theta_v))
+    
+    efe = sqrt(((tan(theta_st))^2) + ((tan(theta_vt))^2) - (2*(tan(theta_st)*tan(theta_vt)*cos(phi))))
+    
+    cos_k = 2*((sqrt((efe^2) + ((tan(theta_st)*tan(theta_vt)*sin(phi))^2)))/((1/cos(theta_st))+(1/cos(theta_vt))))
+    
+    cos_k[cos_k < -1] <- -1
+    cos_k[cos_k > 1] <- 1
+    
+    k = (acos(cos_k))
+    
+    over = (1/pi)*(k - (sin(k)*cos_k))*((1/cos(theta_st)) + (1/cos(theta_vt)))
+    
+    cos_Et = (sin(theta_st)*sin(theta_vt)*cos(phi)) + (cos(theta_st)*cos(theta_vt))
+    
+    
+    k_geo_omega = ((over - ((1/cos(theta_st)) + (1/cos(theta_vt)) - ((1/2)*(1 + cos_Et)*((1/cos(theta_vt))*(1/cos(theta_st))))))*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
+    
+  }
+  
+  
+  k_snow <- function(theta_s, theta_v, phi) {
+    
+    cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
+    
+    E = (acos(cos_E))*(180/pi)
+    
+    P_E = (11.1*(exp(-0.087*(180 - E)))) + (1.1*(exp(-0.014*(180 - E))))
+    
+    R_0 = (k1 + (k2*(cos(theta_s) + cos(theta_v))) + (k3*(cos(theta_s)*cos(theta_v))) + P_E)/(4*(cos(theta_s) + cos(theta_v)))
+    
+    
+    k_snow_omega = (((R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + (0.4076*alpha) - 1.1081)*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
+    
+  }
+  
+  
+  k_vol_l <- (integral3(k_vol, 0, pi/2, 0, pi/2, 0, 2*pi, reltol = 1e-2))*(2/pi)
+  
+  k_geo_l <- (integral3(k_geo, 0, pi/2, 0, pi/2, 0, 2*pi, reltol = 1e-2))*(2/pi)
+  
+  k_snow_l <- (integral3(k_snow, 0, pi/2, 0, pi/2, 0, 2*pi, reltol = 1e-2))*(2/pi)
+  
+  
+  f_iso_final <- vector()
+  f_vol_final <- vector()
+  f_geo_final <- vector()
+  f_snow_final <- vector()
+  rmse_final <- vector()
+  wod_wdr_final <- vector()
+  wod_wsa_final <- vector()
+  
+  
+  pb <- txtProgressBar(min = 1, max = length(theta_s_vec), style = 3)
+  
+  Sys.time()
+  
+  for (j in 1:length(theta_s_vec)) {
     
     
     theta_s <- theta_s_vec[c(j, j+56169, j+(2*56169), j+(3*56169), j+(4*56169), j+(5*56169), j+(6*56169),
@@ -320,71 +413,204 @@ for (j in 1:length(theta_s_vec)) {
                      j+(7*56169), j+(8*56169), j+(9*56169), j+(10*56169), j+(11*56169), j+(12*56169), 
                      j+(13*56169), j+(14*56169), j+(15*56169))]
     
+    perc <- perc_vec[c(j, j+56169, j+(2*56169), j+(3*56169), j+(4*56169), j+(5*56169), j+(6*56169),
+                       j+(7*56169), j+(8*56169), j+(9*56169), j+(10*56169), j+(11*56169), j+(12*56169), 
+                       j+(13*56169), j+(14*56169), j+(15*56169))]
     
-    cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
-    
-    E = (acos(cos_E))*(180/pi)
-    
-    P_E = (11.1*(exp(-0.087*(180 - E)))) + (1.1*(exp(-0.014*(180 - E))))
-    
-    R_0 = (k1 + (k2*(cos(theta_s) + cos(theta_v))) + (k3*(cos(theta_s)*cos(theta_v))) + P_E)/(4*(cos(theta_s) + cos(theta_v)))
+    perc <- ifelse(is.na(perc), 0, perc)
     
     
-    k_snow_omega = (R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + (0.4076*alpha) - 1.1081
-    
-    
-    if (sum(is.na(k_snow_omega)) == 16) {
+    if(sum(is.na(theta_s)) >= 12 | sum(is.na(ifelse(ref < 0, NA, ref))) >= 12) {
+      
       f_iso_final[j] <- NA
+      f_vol_final[j] <- NA
+      f_geo_final[j] <- NA
       f_snow_final[j] <- NA
+      rmse_final[j] <- NA
+      wod_wdr_final[j] <- NA
+      wod_wsa_final[j] <- NA
+      
+    } else {
+      
+      #Calculation of BRDF reflectance
+      
+      k1 <- 1.247
+      k2 <- 1.186
+      k3 <- 5.157
+      alpha <- 0.3
+      
+      
+      cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
+      
+      E = (acos(cos_E))*(180/pi)
+      
+      P_E = (11.1*(exp(-0.087*(180 - E)))) + (1.1*(exp(-0.014*(180 - E))))
+      
+      R_0 = (k1 + (k2*(cos(theta_s) + cos(theta_v))) + (k3*(cos(theta_s)*cos(theta_v))) + P_E)/(4*(cos(theta_s) + cos(theta_v)))
+      
+      theta_st = atan(tan(theta_s))
+      
+      theta_vt = atan(tan(theta_v))
+      
+      efe = sqrt(((tan(theta_st))^2) + ((tan(theta_vt))^2) - (2*(tan(theta_st)*tan(theta_vt)*cos(phi))))
+      
+      cos_k = 2*((sqrt((efe^2) + ((tan(theta_st)*tan(theta_vt)*sin(phi))^2)))/((1/cos(theta_st))+(1/cos(theta_vt))))
+      
+      cos_k[cos_k < -1] <- -1
+      cos_k[cos_k > 1] <- 1
+      
+      k = (acos(cos_k))
+      
+      over = (1/pi)*(k - (sin(k)*cos_k))*((1/cos(theta_st)) + (1/cos(theta_vt)))
+      
+      cos_Et = (sin(theta_st)*sin(theta_vt)*cos(phi)) + (cos(theta_st)*cos(theta_vt))
+      
+      
+      k_snow_omega = (R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + (0.4076*alpha) - 1.1081
+      
+      k_vol_omega = (((((pi/2) - (E*(pi/180)))*cos_E) + sin(E))/(cos(theta_s) + cos(theta_v))) - (pi/4)
+      
+      k_geo_omega = over - ((1/cos(theta_st)) + (1/cos(theta_vt)) - ((1/2)*(1 + cos_Et)*((1/cos(theta_vt))*(1/cos(theta_st)))))
+      
+      k_snow_omega <- matrix(ifelse(ref < 0, NA, k_snow_omega))
+      
+      k_vol_omega <- matrix(ifelse(ref < 0, NA, k_vol_omega))
+      
+      k_geo_omega <- matrix(ifelse(ref < 0, NA, k_geo_omega))
+      
+      
+      cov_weights <- perc/100
+      
+      mean_weights <- (temp_weights + cov_weights)/2
+      
+      
+      #Observation matrix
+      
+      b <- matrix(ifelse(ref < 0, NA, ref))
+      
+      weights_eval <- na.omit(ifelse(is.na(b), NA, mean_weights))
+      
+      b <- na.omit(b)
+      
+      #Kernel matrix
+      
+      A <- matrix(c(rep(1,length(b)), na.omit(k_vol_omega), na.omit(k_geo_omega), na.omit(k_snow_omega)), ncol = 4, nrow = length(b))
+      
+      #Weight matrix
+      
+      if (length(na.omit(ifelse(is.na(as.vector(b)), NA, mean_weights))) == 0) {
+        
+        W <- 1
+        
+      } else {
+        
+        W <- diag(na.omit(ifelse(is.na(as.vector(b)), NA, mean_weights)), nrow = length(b), ncol = length(b))
+        
+      }
+      
+      
+      #Solve constrained weighted linear system
+      
+      x <- lsqlincon(C = W %*% A, d = W %*% matrix(b), lb = c(0,0,0,0))
+      
+      solution <- A %*% matrix(x)
+      
+      
+      #Calculate RMSE
+      
+      rmse <- sqrt(sum(((b - solution)^2)*(weights_eval))/(nrow(b)-length(x)))
+      
+      
+      #WoD Calculation
+      
+      theta_s <- pi/4 # 45 degrees
+      
+      theta_v <- 0 #nadir
+      
+      phi <- 0 #nadir
+      
+      
+      cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
+      
+      E = (acos(cos_E))*(180/pi)
+      
+      P_E = (11.1*(exp(-0.087*(180 - E)))) + (1.1*(exp(-0.014*(180 - E))))
+      
+      R_0 = (k1 + (k2*(cos(theta_s) + cos(theta_v))) + (k3*(cos(theta_s)*cos(theta_v))) + P_E)/(4*(cos(theta_s) + cos(theta_v)))
+      
+      theta_st = atan(tan(theta_s))
+      
+      theta_vt = atan(tan(theta_v))
+      
+      efe = sqrt(((tan(theta_st))^2) + ((tan(theta_vt))^2) - (2*(tan(theta_st)*tan(theta_vt)*cos(phi))))
+      
+      cos_k = 2*((sqrt((efe^2) + ((tan(theta_st)*tan(theta_vt)*sin(phi))^2)))/((1/cos(theta_st))+(1/cos(theta_vt))))
+      
+      cos_k[cos_k < -1] <- -1
+      cos_k[cos_k > 1] <- 1
+      
+      k = (acos(cos_k))
+      
+      over = (1/pi)*(k - (sin(k)*cos_k))*((1/cos(theta_st)) + (1/cos(theta_vt)))
+      
+      cos_Et = (sin(theta_st)*sin(theta_vt)*cos(phi)) + (cos(theta_st)*cos(theta_vt))
+      
+      
+      k_snow_omega = (R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + (0.4076*alpha) - 1.1081
+      
+      k_vol_omega = (((((pi/2) - (E*(pi/180)))*cos_E) + sin(E))/(cos(theta_s) + cos(theta_v))) - (pi/4)
+      
+      k_geo_omega = over - ((1/cos(theta_st)) + (1/cos(theta_vt)) - ((1/2)*(1 + cos_Et)*((1/cos(theta_vt))*(1/cos(theta_st)))))
+      
+      
+      
+      #WoD-WDR
+      
+      U_wdr <- c(1, k_vol_omega, k_geo_omega, k_snow_omega)*mean_weights[9]
+      
+      WoD_wdr <- t(matrix(U_wdr)) %*% ginv(t(A) %*% W %*% A) %*% matrix(U_wdr)
+      
+      
+      #WoD-WSA
+      
+      U_wsa <- c(1, k_vol_l, k_geo_l, k_snow_l)*mean_weights[9]
+      
+      WoD_wsa <- t(matrix(U_wsa)) %*% ginv(t(A) %*% W %*% A) %*% matrix(U_wsa)
+      
+      
+      
+      f_iso_final[j] <- x[1]
+      f_vol_final[j] <- x[2]
+      f_geo_final[j] <- x[3]
+      f_snow_final[j] <- x[4]
+      rmse_final[j] <- rmse
+      wod_wdr_final[j] <- WoD_wdr
+      wod_wsa_final[j] <- WoD_wsa
+      
     }
     
-    else {
-      
-      
-      nls_result <- nls(ref ~ y + z*k_snow_omega, start=list(y = 0.884,z = 1.176), control = list(maxiter = 1000))
-      
-      
-      f_iso_final[j] <- unname(coef(nls_result))[1]
-      f_snow_final[j] <- unname(coef(nls_result))[2]
-      
-    }
     
-  }, error = function(e) {
-    f_iso_final[j] <- NA
-    f_snow_final[j] <- NA})
+    Sys.sleep(0.0001)
+    setTxtProgressBar(pb, j)
+    
+  }
   
   
-  Sys.sleep(0.0001)
-  setTxtProgressBar(pb, j)
-  
-}
-
-output_data <- data.frame(f_iso_final, f_snow_final)
-
-write.table(output_data, file = paste0("SnowKernel_Output_B", band, ".csv"), sep = ";", dec = ".")
-
-}
-
-
-#Reconstruct raster
-
-setwd("/path of output data from previous step")
-
-
-for (i in c(1,2,3,4,6,7)) {
-  
-  band <- i  
-  
-  output_data <- read.table(paste0("SnowKernel_Output_B", band, ".csv"), header = T, sep = ";", dec = ".")
-  
-  f_iso_final <- output_data$f_iso_final
-  
-  f_snow_final <- output_data$f_snow_final
-  
+  #Reconstruct rasters
   
   f_iso_matrix <- t(matrix(f_iso_final, nrow = 237, ncol = 237))
   
+  f_vol_matrix <- t(matrix(f_vol_final, nrow = 237, ncol = 237))
+  
+  f_geo_matrix <- t(matrix(f_geo_final, nrow = 237, ncol = 237))
+  
   f_snow_matrix <- t(matrix(f_snow_final, nrow = 237, ncol = 237))
+  
+  rmse_matrix <- t(matrix(rmse_final, nrow = 237, ncol = 237))
+  
+  wod_wdr_matrix <- t(matrix(wod_wdr_final, nrow = 237, ncol = 237))
+  
+  wod_wsa_matrix <- t(matrix(wod_wsa_final, nrow = 237, ncol = 237)) 
   
   
   f_iso_raster <- raster(f_iso_matrix)
@@ -392,20 +618,51 @@ for (i in c(1,2,3,4,6,7)) {
   extent(f_iso_raster) <- modis_ref
   
   
+  f_vol_raster <- raster(f_vol_matrix)
+  
+  extent(f_vol_raster) <- modis_ref
+  
+  
+  f_geo_raster <- raster(f_geo_matrix)
+  
+  extent(f_geo_raster) <- modis_ref
+  
+  
   f_snow_raster <- raster(f_snow_matrix)
   
   extent(f_snow_raster) <- modis_ref
   
   
-  plot(f_iso_raster)
+  rmse_raster <- raster(rmse_matrix)
   
-  plot(f_snow_raster)
+  extent(rmse_raster) <- modis_ref
   
   
-  writeRaster(f_iso_raster, filename = paste0("/path to output images/f_iso_", img_date, "_B", band), format = "GTiff", overwrite = T)
+  wod_wdr_raster <- raster(wod_wdr_matrix)
   
-  writeRaster(f_snow_raster, filename = paste0("/path to output images/f_snow_", img_date, "_B", band), format = "GTiff", overwrite = T)
+  extent(wod_wdr_raster) <- modis_ref
   
+  
+  wod_wsa_raster <- raster(wod_wsa_matrix)
+  
+  extent(wod_wsa_raster) <- modis_ref
+  
+  
+  writeRaster(f_iso_raster, filename = paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/f_iso_", img_date, "_B", band), format = "GTiff", overwrite = T)
+  
+  writeRaster(f_vol_raster, filename = paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/f_vol_", img_date, "_B", band), format = "GTiff", overwrite = T)
+  
+  writeRaster(f_geo_raster, filename = paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/f_geo_", img_date, "_B", band), format = "GTiff", overwrite = T)
+  
+  writeRaster(f_snow_raster, filename = paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/f_snow_", img_date, "_B", band), format = "GTiff", overwrite = T)
+  
+  writeRaster(rmse_raster, filename = paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/rmse_", img_date, "_B", band), format = "GTiff", overwrite = T)
+  
+  writeRaster(wod_wdr_raster, filename = paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/wod_wdr_", img_date, "_B", band), format = "GTiff", overwrite = T)
+  
+  writeRaster(wod_wsa_raster, filename = paste0("/path to ouput MODIS BRDF kernel parameters and evaluation/wod_wsa_", img_date, "_B", band), format = "GTiff", overwrite = T)
   
 }
+
+Sys.time()
 
