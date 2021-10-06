@@ -16,11 +16,7 @@ observation_vars <- read.table("/radiation observations.csv", header = T, sep = 
 
 files <- list.files(getwd(), pattern = "blue_sky_albedo_snow_.*.tif$")
 
-bias <- 0.03240389 #Our study bias corrected the albedo before calculating the net shortwave radiation.
-#You can change this to 0, if you do not wish to bias correct the albedo. Or, you can use a bias value
-#that reflects your domain.
-
-s2_albedo_stack <- stack(files) - bias
+s2_albedo_stack <- stack(files)
 
 #The code below will loop through all your albedo images
 
