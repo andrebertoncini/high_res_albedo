@@ -21,7 +21,7 @@ s2_albedo_stack <- stack(files)
 
 #The code below will loop through all your albedo images
 
-for (i in 1:24) {
+for (i in 1:19) {
   
   s2_albedo_stack[[i]][s2_albedo_stack[[i]] > 1] <- NA
   s2_albedo_stack[[i]][s2_albedo_stack[[i]] < 0] <- NA
@@ -35,7 +35,7 @@ for (i in 1:24) {
   T0 <- 273.15 #K
   Rv <- 461 #J.K^-1.kg^-1
   e0 <- 0.6113 #kPa
-  Kt <- c(1,1,1,1,1,1,1,1,1,0.75,0.75,1,0.75,1,1,1,1,1,1,1,1,1,1,1) #empirical turbidity coefficient from Allen et al. (2006)
+  Kt <- c(1,1,1,1,1,1,1,1,0.75,0.75,1,0.75,1,1,1,1,1,1,1) #empirical turbidity coefficient from Allen et al. (2006)
   SM <- -105 #deg longitude for local time zone
   
   
