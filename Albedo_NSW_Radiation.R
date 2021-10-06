@@ -18,6 +18,7 @@ files <- list.files(getwd(), pattern = "blue_sky_albedo_snow_.*.tif$")
 
 s2_albedo_stack <- stack(files)
 
+
 #The code below will loop through all your albedo images
 
 for (i in 1:24) {
