@@ -30,6 +30,11 @@ Dm_j <- ifelse(Y == "2016" | Y == "2020", Dm_j + 1, Dm_j) #for leap years: 2016 
 date_j <- paste0(Y, Dm_j)
 
 
+#Set Sentinel-2 sensor (can be S2A or S2B)
+
+sensor <- "S2A" or "S2B"
+
+
 #Uncomment lines below to download MODIS data through the MODIS package.
 
 #begin_m <- "2019.08.28"
@@ -269,6 +274,40 @@ for (w in c(1,2,3,4,6,7)) {
   modis_phi_i <- modis_phi_i*modis_mask_i
   
   plot(modis_phi_i)
+  
+  
+  #Correct to Sentinel-2 Spectral Response
+
+  modis_landcover <- raster("MCD12Q1 MODIS Landcover image from the same year.tif")
+
+  modis_landcover_res <- resample(modis_landcover, modis_clear[[1]], method = "ngb")
+
+  plot(modis_landcover_res)
+
+  sbaf <- read.csv("Table with SBAF values.csv", sep = ";") #Remember that the SBAF changes depending on the Sentinel-2 sensor (S2A or 2SB)
+
+  sbaf_bands <- c("Red", "NIR", "Blue", "Green", "none", "SWIR1", "SWIR2")
+
+  
+  #You might need to add or remove lines below (between lines 294 and 305) depending on the landcover classes available in your study area
+  
+  modis_clear[modis_landcover_res == 1] <- modis_clear[modis_landcover_res == 1]*(sbaf$sbaf[which(sbaf$class_n == 1 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 4] <- modis_clear[modis_landcover_res == 4]*(sbaf$sbaf[which(sbaf$class_n == 4 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 5] <- modis_clear[modis_landcover_res == 5]*(sbaf$sbaf[which(sbaf$class_n == 5 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 6] <- modis_clear[modis_landcover_res == 6]*(sbaf$sbaf[which(sbaf$class_n == 6 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 7] <- modis_clear[modis_landcover_res == 7]*(sbaf$sbaf[which(sbaf$class_n == 7 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 8] <- modis_clear[modis_landcover_res == 8]*(sbaf$sbaf[which(sbaf$class_n == 8 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 9] <- modis_clear[modis_landcover_res == 9]*(sbaf$sbaf[which(sbaf$class_n == 9 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 10] <- modis_clear[modis_landcover_res == 10]*(sbaf$sbaf[which(sbaf$class_n == 10 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 11] <- modis_clear[modis_landcover_res == 11]*(sbaf$sbaf[which(sbaf$class_n == 11 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 15] <- modis_clear[modis_landcover_res == 15]*(sbaf$sbaf[which(sbaf$class_n == 15 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 16] <- modis_clear[modis_landcover_res == 16]*(sbaf$sbaf[which(sbaf$class_n == 16 & sbaf$band == sbaf_bands[w])])
+  modis_clear[modis_landcover_res == 17] <- modis_clear[modis_landcover_res == 17]*(sbaf$sbaf[which(sbaf$class_n == 17 & sbaf$band == sbaf_bands[w])])
+
+  modis_clear[modis_clear < 0] <- NA
+  modis_clear[modis_clear > 1] <- NA
+
+  plot(modis_clear)
   
   
   #Input percentage of pixel coverage
