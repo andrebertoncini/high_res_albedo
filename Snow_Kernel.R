@@ -284,7 +284,7 @@ for (w in c(1,2,3,4,6,7)) {
 
   plot(modis_landcover_res)
 
-  sbaf <- read.csv("Table with SBAF values.csv", sep = ";") #Remember that the SBAF changes depending on the Sentinel-2 sensor (S2A or 2SB)
+  sbaf <- read.csv("Table with SBAF values.csv", sep = ";") #Remember that the SBAF changes depending on the Sentinel-2 sensor (S2A or 2SB) and that the table should follow the format used in lines 294-305
 
   sbaf_bands <- c("Red", "NIR", "Blue", "Green", "none", "SWIR1", "SWIR2")
 
