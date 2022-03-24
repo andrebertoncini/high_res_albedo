@@ -35,7 +35,7 @@ date_j <- paste0(Y, Dm_j)
 sensor <- "S2A" or "S2B"
 
 
-#Uncomment lines below to download MODIS data through the MODIS package.
+#Uncomment lines below to download MODIS data through the MODIS package
 
 #begin_m <- "2019.08.28"
 #end_m <- "2019.09.12"
