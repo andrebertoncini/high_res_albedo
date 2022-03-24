@@ -1,7 +1,6 @@
-#This code is used to retrieve MODIS BRDF using the snow kernel model, 
-#which is based on Jiao et al. (2019) "Development of a snow kernel to 
-#better model the anisotropic reflectance of pure snow in a kernel-driven 
-#BRDF model framework" - Remote Sensing of Environment.
+#This code is used to retrieve MODIS BRDF using the RTLSR kernel model, 
+#which is based on Li and Strahler (1992), Roujean et al. (1992), and
+#Wanner et al. (1995).
 
 #Author: Andre Bertoncini
 
@@ -395,7 +394,7 @@ for (w in c(1,2,3,4,6,7)) {
   }
 
 
-  #Compute isotropic, volumetric, geometric, and snow kernels
+  #Compute isotropic, volumetric, and geometric kernels
 
   theta_s_vec <- as.vector(modis_theta_s_i)
   theta_v_vec <- as.vector(modis_theta_v_i)
