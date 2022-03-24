@@ -3,6 +3,9 @@
 #snow-free albedo from Landsat surface reflectance and MODIS BRDF" - Remote Sensing
 #of Environment.
 
+#IMPORTANT: If you choose to use the RTLSR_Kernel.R script, you will need to
+#comment out all the lines that involve the snow kernel and the f_iso parameter.
+
 #Author: Andre Bertoncini
 
 #Institution: Centre for Hydrology - University of Saskatchewan
@@ -92,113 +95,113 @@ for (w in c(1,2,3,4,6,7)) {
   k2 <- 1.186
   k3 <- 5.157
   alpha <- 0.3
-  
-  
+
+
   #Generate geometry information from Sentinel-2 XML data
-  
+
   doc = xmlParse(paste0(list_folders[[folder[7]]], "/MTD_TL.xml"))
-  
-  
+  #doc = xmlParse(paste0(list_folders[[127]], "/MTD_TL.xml"))
+
   sun_zenith <- xmlToDataFrame(getNodeSet(doc, "//Tile_Angles/Sun_Angles_Grid/Zenith/Values_List"))
-  
+
   sun_zenith <- strsplit(t(sun_zenith), "[ ]")
-  
+
   sun_zenith <- as.numeric(unlist(sun_zenith))
-  
+
   sun_zenith_m <- t(matrix(sun_zenith, ncol = 23, nrow = 23))
-  
+
   theta_s_i <- raster(sun_zenith_m)
-  
+
   extent(theta_s_i) <- modis_ref
-  
+
   theta_s_i <- resample(theta_s_i, modis_ref)*(pi/180)
-  
+
   plot(theta_s_i)
-  
-  
+
+
   sun_azimuth <- xmlToDataFrame(getNodeSet(doc, "//Tile_Angles/Sun_Angles_Grid/Azimuth/Values_List"))
-  
+
   sun_azimuth <- strsplit(t(sun_azimuth), "[ ]")
-  
+
   sun_azimuth <- as.numeric(unlist(sun_azimuth))
-  
+
   sun_azimuth_m <- t(matrix(sun_azimuth, ncol = 23, nrow = 23))
-  
+
   phi_s <- raster(sun_azimuth_m)
-  
+
   extent(phi_s) <- modis_ref
-  
+
   phi_s <- resample(phi_s, modis_ref)*(pi/180)
-  
+
   plot(phi_s)
-  
-  
+
+
   view_zenith <- xmlToDataFrame(getNodeSet(doc, "//Tile_Angles/Viewing_Incidence_Angles_Grids/Zenith/Values_List"))
-  
+
   view_zenith <- strsplit(t(view_zenith), "[ ]")
-  
+
   view_zenith <- as.numeric(unlist(view_zenith))
-  
+
   mean_v_vector <- vector()
-  
+
   for (i in 1:length(view_zenith)) {
-    
+
     mean_v_vector[i] <- mean(view_zenith[c(i, i+529, i+(2*529), i+(3*529), i+(4*529), i+(5*529), i+(6*529),
-                                           i+(7*529), i+(8*529), i+(9*529), i+(10*529), i+(11*529), i+(12*529), 
+                                           i+(7*529), i+(8*529), i+(9*529), i+(10*529), i+(11*529), i+(12*529),
                                            i+(13*529), i+(14*529), i+(15*529), i+(16*529), i+(17*529), i+(18+529),
                                            i+(19*529), i+(20*529), i+(21*529), i+(22*529))], na.rm = T)
   }
-  
+
   view_zenith_m <- t(matrix(mean_v_vector, ncol = 23, nrow = 23))
-  
+
   theta_v <- raster(view_zenith_m)
-  
+
   extent(theta_v) <- modis_ref
-  
+
   theta_v <- resample(theta_v, modis_ref)*(pi/180)
-  
+
   plot(theta_v)
-  
-  
+
+
   view_azimuth <- xmlToDataFrame(getNodeSet(doc, "//Tile_Angles/Viewing_Incidence_Angles_Grids/Azimuth/Values_List"))
-  
+
   view_azimuth <- strsplit(t(view_azimuth), "[ ]")
-  
+
   view_azimuth <- as.numeric(unlist(view_azimuth))
-  
+
   mean_p_vector <- vector()
-  
+
   for (i in 1:length(view_azimuth)) {
-    
+
     mean_p_vector[i] <- mean(view_azimuth[c(i, i+529, i+(2*529), i+(3*529), i+(4*529), i+(5*529), i+(6*529),
-                                            i+(7*529), i+(8*529), i+(9*529), i+(10*529), i+(11*529), i+(12*529), 
+                                            i+(7*529), i+(8*529), i+(9*529), i+(10*529), i+(11*529), i+(12*529),
                                             i+(13*529), i+(14*529), i+(15*529), i+(16*529), i+(17*529), i+(18+529),
                                             i+(19*529), i+(20*529), i+(21*529), i+(22*529))], na.rm = T)
   }
-  
+
   view_azimuth_m <- t(matrix(mean_p_vector, ncol = 23, nrow = 23))
-  
+
   phi_v <- raster(view_azimuth_m)
-  
+
   extent(phi_v) <- modis_ref
-  
+
   phi_v <- resample(phi_v, modis_ref)*(pi/180)
-  
-  
+
+
   phi = abs(phi_s - phi_v)
-  
+
   phi_f <- phi
-  
+
   phi_f[phi < pi] <- NA
-  
+
   phi[phi >= pi] <- NA
-  
+
   phi_f <- abs(phi_f - (2*pi))
-  
+
   phi_final <- cover(phi, phi_f)
-  
+
   phi <- phi_final
-  
+
   plot(phi)
   
   
@@ -243,89 +246,89 @@ for (w in c(1,2,3,4,6,7)) {
   #(theta_s, theta_v, phi).
   
   theta_s <- theta_s_i
-  
-  
+
+
   cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
-  
+
   E = (acos(cos_E))*(180/pi)
-  
+
   P_E = (11.1*(exp(-0.087*(180 - E)))) + (1.1*(exp(-0.014*(180 - E))))
-  
+
   R_0 = (k1 + (k2*(cos(theta_s) + cos(theta_v))) + (k3*(cos(theta_s)*cos(theta_v))) + P_E)/(4*(cos(theta_s) + cos(theta_v)))
-  
+
   theta_st = atan(tan(theta_s))
-  
+
   theta_vt = atan(tan(theta_v))
-  
+
   efe = sqrt(((tan(theta_st))^2) + ((tan(theta_vt))^2) - (2*(tan(theta_st)*tan(theta_vt)*cos(phi))))
-  
+
   cos_k = 2*((sqrt((efe^2) + ((tan(theta_st)*tan(theta_vt)*sin(phi))^2)))/((1/cos(theta_st))+(1/cos(theta_vt))))
-  
+
   cos_k[cos_k < -1] <- -1
   cos_k[cos_k > 1] <- 1
-  
+
   k = (acos(cos_k))
-  
+
   over = (1/pi)*(k - (sin(k)*cos_k))*((1/cos(theta_st)) + (1/cos(theta_vt)))
-  
+
   cos_Et = (sin(theta_st)*sin(theta_vt)*cos(phi)) + (cos(theta_st)*cos(theta_vt))
   
   
-  k_snow_omega = (R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + (0.4076*alpha) - 1.1081
+  k_snow_omega = (R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + ((0.4076*alpha) - 1.1081)
   
-  k_vol_omega = (((((pi/2) - (E*(pi/180)))*cos_E) + sin(E))/(cos(theta_s) + cos(theta_v))) - (pi/4)
-  
+  k_vol_omega = (((((pi/2) - (E*(pi/180)))*cos_E) + sin(E*(pi/180)))/(cos(theta_s) + cos(theta_v))) - (pi/4)
+
   k_geo_omega = over - ((1/cos(theta_st)) + (1/cos(theta_vt)) - ((1/2)*(1 + cos_Et)*((1/cos(theta_vt))*(1/cos(theta_st)))))
   
   
   R_omega = f_iso + f_vol*k_vol_omega + f_geo*k_geo_omega + f_snow*k_snow_omega
   
   R_omega[R_omega < 0] <- NA
-  
+
   plot(R_omega)
-  
-  
+
+
   #Calculation of BRDF reflectance (R_l_theta_s) at Sentinel-2 illumination angle (theta_s).
-  
+
   rm(theta_v)
   rm(phi)
-  
-  
+
+
   k_vol_theta_s <- function(theta_v, phi) {
-    
+
     cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
-    
+
     E = (acos(cos_E))*(180/pi)
-    
-    
-    k_vol_omega = ((((((pi/2) - (E*(pi/180)))*cos_E) + sin(E))/(cos(theta_s) + cos(theta_v))) - (pi/4))*(sin(theta_v))*(cos(theta_v))
-    
+
+
+    k_vol_omega = ((((((pi/2) - (E*(pi/180)))*cos_E) + sin(E*(pi/180)))/(cos(theta_s) + cos(theta_v))) - (pi/4))*(sin(theta_v))*(cos(theta_v))
+
   }
-  
-  
-  
+
+
+
   k_geo_theta_s <- function(theta_v, phi) {
-    
+
     theta_st = atan(tan(theta_s))
-    
+
     theta_vt = atan(tan(theta_v))
-    
+
     efe = sqrt(((tan(theta_st))^2) + ((tan(theta_vt))^2) - (2*(tan(theta_st)*tan(theta_vt)*cos(phi))))
-    
+
     cos_k = 2*((sqrt((efe^2) + ((tan(theta_st)*tan(theta_vt)*sin(phi))^2)))/((1/cos(theta_st))+(1/cos(theta_vt))))
-    
+
     cos_k[cos_k < -1] <- -1
     cos_k[cos_k > 1] <- 1
-    
+
     k = (acos(cos_k))
-    
+
     over = (1/pi)*(k - (sin(k)*cos_k))*((1/cos(theta_st)) + (1/cos(theta_vt)))
-    
+
     cos_Et = (sin(theta_st)*sin(theta_vt)*cos(phi)) + (cos(theta_st)*cos(theta_vt))
-    
-    
+
+
     k_geo_omega = (over - ((1/cos(theta_st)) + (1/cos(theta_vt)) - ((1/2)*(1 + cos_Et)*((1/cos(theta_vt))*(1/cos(theta_st))))))*(sin(theta_v))*(cos(theta_v))
-    
+
   }
   
   
@@ -341,7 +344,7 @@ for (w in c(1,2,3,4,6,7)) {
     R_0 = (k1 + (k2*(cos(theta_s) + cos(theta_v))) + (k3*(cos(theta_s)*cos(theta_v))) + P_E)/(4*(cos(theta_s) + cos(theta_v)))
     
     
-    k_snow_omega = ((R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + (0.4076*alpha) - 1.1081)*(sin(theta_v))*(cos(theta_v))
+    k_snow_omega = ((R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + ((0.4076*alpha) - 1.1081))*(sin(theta_v))*(cos(theta_v))
     
   }
   
@@ -405,45 +408,45 @@ for (w in c(1,2,3,4,6,7)) {
   
   
   #Calculation of BRDF reflectance (R_l) integrated for both the illumination and observation hemispheres.
-  
+
   rm(theta_s)
-  
-  
+
+
   k_vol <- function(theta_s, theta_v, phi) {
-    
+
     cos_E = ((sin(theta_s))*(sin(theta_v))*(cos(phi))) + ((cos(theta_s))*(cos(theta_v)))
-    
+
     E = (acos(cos_E))*(180/pi)
-    
-    
-    k_vol_omega = (((((((pi/2) - (E*(pi/180)))*cos_E) + sin(E))/(cos(theta_s) + cos(theta_v))) - (pi/4))*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
-    
+
+
+    k_vol_omega = (((((((pi/2) - (E*(pi/180)))*cos_E) + sin(E*(pi/180)))/(cos(theta_s) + cos(theta_v))) - (pi/4))*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
+
   }
-  
-  
-  
+
+
+
   k_geo <- function(theta_s, theta_v, phi) {
-    
+
     theta_st = atan(tan(theta_s))
-    
+
     theta_vt = atan(tan(theta_v))
-    
+
     efe = sqrt(((tan(theta_st))^2) + ((tan(theta_vt))^2) - (2*(tan(theta_st)*tan(theta_vt)*cos(phi))))
-    
+
     cos_k = 2*((sqrt((efe^2) + ((tan(theta_st)*tan(theta_vt)*sin(phi))^2)))/((1/cos(theta_st))+(1/cos(theta_vt))))
-    
+
     cos_k[cos_k < -1] <- -1
     cos_k[cos_k > 1] <- 1
-    
+
     k = (acos(cos_k))
-    
+
     over = (1/pi)*(k - (sin(k)*cos_k))*((1/cos(theta_st)) + (1/cos(theta_vt)))
-    
+
     cos_Et = (sin(theta_st)*sin(theta_vt)*cos(phi)) + (cos(theta_st)*cos(theta_vt))
-    
-    
+
+
     k_geo_omega = ((over - ((1/cos(theta_st)) + (1/cos(theta_vt)) - ((1/2)*(1 + cos_Et)*((1/cos(theta_vt))*(1/cos(theta_st))))))*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
-    
+
   }
   
   
@@ -458,7 +461,7 @@ for (w in c(1,2,3,4,6,7)) {
     R_0 = (k1 + (k2*(cos(theta_s) + cos(theta_v))) + (k3*(cos(theta_s)*cos(theta_v))) + P_E)/(4*(cos(theta_s) + cos(theta_v)))
     
     
-    k_snow_omega = (((R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + (0.4076*alpha) - 1.1081)*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
+    k_snow_omega = (((R_0*(1-(alpha*(cos(E*(pi/180)))*(exp(-cos(E*(pi/180))))))) + ((0.4076*alpha) - 1.1081))*(sin(theta_v))*(cos(theta_v)))*(sin(theta_s))*(cos(theta_s))
     
   }
   
